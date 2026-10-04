@@ -1,26 +1,26 @@
-terraform{
-    required_providers {
-        aws = {
-            source = "hashicorp/aws"
-            version = "~> 5.0"
-        }
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
+  }
 }
 
 provider "aws" {
-    region = var.region
+  region = var.region
 }
 
 #vpc
 data "aws_vpc" "default" {
-    default = true
+  default = true
 }
 
 data "aws_subnets" "default" {
-    filter {
-        name = "vpc-id"
-        values = [data.aws_vpc.default.id]
-    }
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
 }
 
 data "aws_caller_identity" "me" {}
@@ -34,17 +34,17 @@ data "aws_ssm_parameter" "ubuntu_ami" {
 # montoring server
 
 resource "aws_security_group" "monitoring" {
-    name = "todo-monitoring-sg"
-    vpc_id = data.aws_vpc.default.id
+  name   = "todo-monitoring-sg"
+  vpc_id = data.aws_vpc.default.id
 
-     # SSH, Grafana, Prometheus: my IP only
-    dynamic "ingress" {
-        for_each = [22, 3000, 9090]
-        content {
-        from_port   = ingress.value
-        to_port     = ingress.value
-        protocol    = "tcp"
-        cidr_blocks = [var.my_ip]
+  # SSH, Grafana, Prometheus: my IP only
+  dynamic "ingress" {
+    for_each = [22, 3000, 9090]
+    content {
+      from_port   = ingress.value
+      to_port     = ingress.value
+      protocol    = "tcp"
+      cidr_blocks = [var.my_ip]
     }
   }
 
@@ -72,7 +72,7 @@ resource "aws_security_group" "app" {
     }
   }
 
- # metrics (backend, cadvisor, node-exporter): monitoring server only
+  # metrics (backend, cadvisor, node-exporter): monitoring server only
   dynamic "ingress" {
     for_each = [8080, 8081, 9100]
     content {
@@ -122,20 +122,21 @@ resource "aws_db_instance" "mysql" {
   db_subnet_group_name    = aws_db_subnet_group.db.name
   vpc_security_group_ids  = [aws_security_group.rds.id]
   publicly_accessible     = false
-  backup_retention_period = 7
+  backup_retention_period = 0
   skip_final_snapshot     = true
 }
 
 # ---------- Secrets in SSM Parameter Store ----------
+# Parameter names are the environment variable names the app expects
 locals {
   secrets = {
-    db_url           = "jdbc:mysql://${aws_db_instance.mysql.address}:3306/todo_db"
-    db_user          = "todo"
-    db_password      = var.db_password
-    cohere_key       = var.cohere_key
-    slack_url        = var.slack_url
-    grafana_password = var.grafana_password
-    app_private_ip   = aws_instance.server["app"].private_ip # monitoring server scrapes this
+    SPRING_DATASOURCE_URL      = "jdbc:mysql://${aws_db_instance.mysql.address}:3306/todo_db"
+    SPRING_DATASOURCE_USERNAME = "todo"
+    SPRING_DATASOURCE_PASSWORD = var.db_password
+    COHERE_API_KEY             = var.cohere_key
+    SLACK_WEBHOOK_URL          = var.slack_url
+    GRAFANA_ADMIN_PASSWORD     = var.grafana_password
+    APP_PRIVATE_IP             = aws_instance.server["app"].private_ip # monitoring server scrapes this
   }
 }
 
@@ -159,14 +160,18 @@ resource "aws_iam_role" "ec2" {
   })
 }
 
+# GetParametersByPath is used by deploy.sh to load all secrets at once
 resource "aws_iam_role_policy" "read_secrets" {
   role = aws_iam_role.ec2.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["ssm:GetParameter"]
-      Resource = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter/todo/prod/*"
+      Effect = "Allow"
+      Action = ["ssm:GetParametersByPath", "ssm:GetParameter", "ssm:GetParameters"]
+      Resource = [
+        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter/todo/prod",
+        "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter/todo/prod/*"
+      ]
     }]
   })
 }
