@@ -1,6 +1,5 @@
 pipeline {
-    agent any
-
+    agent { label 'build-agent' }
     triggers { githubPush() }                  // auto-start on push (plain Pipeline job)
     options  { timeout(time: 30, unit: 'MINUTES') }
 
@@ -16,6 +15,13 @@ pipeline {
     }
 
     stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                credentialsId: 'github-pat',
+                url: 'https://github.com/keerthana-bg5/TodoSummaryAssistant.git'
+            }
+        }
         stage('Test') {
             steps {
                 dir('Backend/todo-summary-assistant') {
