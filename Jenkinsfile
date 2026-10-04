@@ -8,7 +8,7 @@ pipeline {
         TAG            = "${env.GIT_COMMIT.take(7)}"          // image tag = commit SHA
         SSH_OPTS       = '-o StrictHostKeyChecking=no'
         HUB            = credentials('dockerhub-creds')       // gives HUB_USR / HUB_PSW
-        KEY            = credentials('ec2-ssh-key')
+        KEY            = credentials('jenkins-agent-key')
         APP_HOST       = credentials('app-host')
         MON_HOST       = credentials('monitoring-host')
         APP_PRIVATE_IP = credentials('app-private-ip')
@@ -45,11 +45,18 @@ pipeline {
         stage('Deploy App') {
             when { branch 'main' }
             steps {
-                sh 'scp $SSH_OPTS -i $KEY docker-compose.yml ubuntu@$APP_HOST:/opt/todo/'
-                sh '''ssh $SSH_OPTS -i $KEY ubuntu@$APP_HOST "/snap/bin/aws ssm get-parameters-by-path --path /todo/app/ 
-                --with-decryption --region ap-south-1 --query 'Parameters[*].[Name,Value]' --output text | sed 's#/todo/app/##; 
-                s#\\t#=#' > /opt/todo/.env"'''
-                sh 'ssh $SSH_OPTS -i $KEY ubuntu@$APP_HOST "cd /opt/todo && TAG=$TAG DOCKERHUB_USER=$DOCKERHUB_USER docker compose up -d"'
+                sh '''
+                    ssh $SSH_OPTS -i $KEY ubuntu@$MON_HOST "
+                        cd /opt/todo/monitoring &&
+                        GRAFANA_PASSWORD=\\$(/snap/bin/aws ssm get-parameter \
+                            --name /todo/prod/grafana_password \
+                            --with-decryption \
+                            --query Parameter.Value \
+                            --output text \
+                            --region ap-south-1) \
+                        docker compose up -d --force-recreate
+                    "
+                '''
             }
         }
         stage('Health Check') {
