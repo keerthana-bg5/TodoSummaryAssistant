@@ -45,18 +45,21 @@ pipeline {
         stage('Deploy App') {
             when { branch 'main' }
             steps {
+                sh 'scp $SSH_OPTS -i $KEY docker-compose.yml ubuntu@$APP_HOST:/opt/todo/'
+
                 sh '''
-                    ssh $SSH_OPTS -i $KEY ubuntu@$MON_HOST "
-                        cd /opt/todo/monitoring &&
-                        GRAFANA_PASSWORD=\\$(/snap/bin/aws ssm get-parameter \
-                            --name /todo/prod/grafana_password \
+                    ssh $SSH_OPTS -i $KEY ubuntu@$APP_HOST "
+                        /snap/bin/aws ssm get-parameters-by-path \
+                            --path /todo/prod/ \
                             --with-decryption \
-                            --query Parameter.Value \
-                            --output text \
-                            --region ap-south-1) \
-                        docker compose up -d --force-recreate
+                            --region ap-south-1 \
+                            --query 'Parameters[*].[Name,Value]' \
+                            --output text |
+                        sed 's#/todo/prod/##; s#\\t#=#' > /opt/todo/.env
                     "
                 '''
+
+                sh 'ssh $SSH_OPTS -i $KEY ubuntu@$APP_HOST "cd /opt/todo && TAG=$TAG DOCKERHUB_USER=$DOCKERHUB_USER docker compose up -d"'
             }
         }
         stage('Health Check') {
@@ -71,11 +74,18 @@ pipeline {
         stage('Deploy Monitoring') {
             when { branch 'main' }
             steps {
-                sh 'sed -i "s/APP_IP/$APP_PRIVATE_IP/g" monitoring/prometheus.yml'
-                sh 'scp -r $SSH_OPTS -i $KEY monitoring ubuntu@$MON_HOST:/opt/todo/'
-                sh 'ssh $SSH_OPTS -i $KEY ubuntu@$MON_HOST "cd /opt/todo/monitoring && 
-                GRAFANA_PASSWORD=\\$(/snap/bin/aws ssm get-parameter --name /todo/monitoring/GRAFANA_PASSWORD --with-decryption 
-                --query Parameter.Value --output text --region ap-south-1) docker compose up -d --force-recreate"'
+                sh '''
+                    ssh $SSH_OPTS -i $KEY ubuntu@$MON_HOST "
+                        cd /opt/todo/monitoring &&
+                        GRAFANA_PASSWORD=\\$(/snap/bin/aws ssm get-parameter \
+                            --name /todo/prod/grafana_password \
+                            --with-decryption \
+                            --query Parameter.Value \
+                            --output text \
+                            --region ap-south-1) \
+                        docker compose up -d --force-recreate
+                    "
+                '''
             }
         }
     }
