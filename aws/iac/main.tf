@@ -11,7 +11,7 @@ provider "aws" {
   region = var.region
 }
 
-#vpc
+# vpc
 data "aws_vpc" "default" {
   default = true
 }
@@ -29,17 +29,23 @@ data "aws_ssm_parameter" "ubuntu_ami" {
   name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }
 
-
-# security groups
-# montoring server
-
+# ---------- Security groups ----------
+# monitoring server
 resource "aws_security_group" "monitoring" {
   name   = "todo-monitoring-sg"
   vpc_id = data.aws_vpc.default.id
 
-  # SSH, Grafana, Prometheus: my IP only
+  # SSH: my IP + Jenkins agent (same VPC)
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.my_ip, data.aws_vpc.default.cidr_block]
+  }
+
+  # Grafana, Prometheus: my IP only
   dynamic "ingress" {
-    for_each = [22, 3000, 9090]
+    for_each = [3000, 9090]
     content {
       from_port   = ingress.value
       to_port     = ingress.value
@@ -54,22 +60,27 @@ resource "aws_security_group" "monitoring" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
 }
 
+# app server
 resource "aws_security_group" "app" {
   name   = "todo-app-sg"
   vpc_id = data.aws_vpc.default.id
 
-  # port => allowed source: SSH from my IP, web app from anywhere
-  dynamic "ingress" {
-    for_each = { 22 = var.my_ip, 80 = "0.0.0.0/0" }
-    content {
-      from_port   = ingress.key
-      to_port     = ingress.key
-      protocol    = "tcp"
-      cidr_blocks = [ingress.value]
-    }
+  # SSH: my IP + Jenkins agent (same VPC)
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.my_ip, data.aws_vpc.default.cidr_block]
+  }
+
+  # web app: anyone
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # metrics (backend, cadvisor, node-exporter): monitoring server only
@@ -91,11 +102,11 @@ resource "aws_security_group" "app" {
   }
 }
 
+# database: app server only
 resource "aws_security_group" "rds" {
   name   = "todo-rds-sg"
   vpc_id = data.aws_vpc.default.id
 
-  # MySQL: app server only
   ingress {
     from_port       = 3306
     to_port         = 3306
@@ -122,7 +133,7 @@ resource "aws_db_instance" "mysql" {
   db_subnet_group_name    = aws_db_subnet_group.db.name
   vpc_security_group_ids  = [aws_security_group.rds.id]
   publicly_accessible     = false
-  backup_retention_period = 0
+  backup_retention_period = 0 # use 7 if your account allows backups
   skip_final_snapshot     = true
 }
 
@@ -136,7 +147,7 @@ locals {
     COHERE_API_KEY             = var.cohere_key
     SLACK_WEBHOOK_URL          = var.slack_url
     GRAFANA_ADMIN_PASSWORD     = var.grafana_password
-    APP_PRIVATE_IP             = aws_instance.server["app"].private_ip # monitoring server scrapes this
+    APP_PRIVATE_IP             = aws_instance.server["app"].private_ip
   }
 }
 
@@ -160,7 +171,7 @@ resource "aws_iam_role" "ec2" {
   })
 }
 
-# GetParametersByPath is used by deploy.sh to load all secrets at once
+# GetParametersByPath is used by the Jenkins deploy stages to load all secrets at once
 resource "aws_iam_role_policy" "read_secrets" {
   role = aws_iam_role.ec2.id
   policy = jsonencode({
@@ -219,6 +230,10 @@ resource "aws_instance" "server" {
 # ---------- Outputs ----------
 output "public_ips" {
   value = { for name, server in aws_instance.server : name => server.public_ip }
+}
+
+output "private_ips" {
+  value = { for name, server in aws_instance.server : name => server.private_ip }
 }
 
 output "rds_endpoint" {
