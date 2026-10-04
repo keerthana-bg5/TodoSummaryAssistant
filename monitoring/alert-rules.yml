@@ -1,0 +1,26 @@
+groups:
+  - name: todo-alerts
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        annotations:
+          summary: "{{ $labels.job }} is down"
+
+      - alert: HighErrorRate
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) > 0.5
+        for: 2m
+        annotations:
+          summary: "Backend is returning many 5xx errors"
+
+      - alert: HighCPU
+        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        annotations:
+          summary: "CPU above 85%"
+
+      - alert: LowDisk
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        annotations:
+          summary: "Disk space below 15%"

@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and fill in. NEVER commit terraform.tfvars
+my_ip            = "1.2.3.4/32"
+key_name         = "todo-key"
+db_password      = "ChangeMe12345"
+cohere_key       = "your-cohere-key"
+slack_url        = "https://hooks.slack.com/services/XXX"
+grafana_password = "ChangeMe12345"

@@ -1,0 +1,35 @@
+services:
+  backend:
+    image: ${DOCKERHUB_USER}/todo-backend:${TAG}
+    env_file: .env
+    ports:
+      - "8080:8080"   # metrics for Prometheus (only the monitoring server can reach it)
+    restart: unless-stopped
+
+  frontend:
+    image: ${DOCKERHUB_USER}/todo-frontend:${TAG}
+    ports:
+      - "80:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter
+    command: --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
