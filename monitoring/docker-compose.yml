@@ -11,7 +11,8 @@ services:
   grafana:
     image: grafana/grafana
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      
     volumes:
       - grafana-data:/var/lib/grafana
     ports:
