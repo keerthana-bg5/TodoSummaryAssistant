@@ -1,6 +1,6 @@
 pipeline {
     agent { label 'build-agent' }
-    triggers { githubPush() }                  // auto-start on push (plain Pipeline job)
+    triggers { githubPush() }               // auto-start on push (plain Pipeline job)
     options  { timeout(time: 30, unit: 'MINUTES') }
 
     environment {
